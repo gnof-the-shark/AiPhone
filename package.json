@@ -1,7 +1,7 @@
 {
   "name": "aiphone",
   "version": "1.0.0",
-  "description": "Outbound SMS send API for the ClawPhone / Twilio integration",
+  "description": "Outbound SMS send API for the ClawPhone integration",
   "type": "module",
   "main": "index.mjs",
   "scripts": {
@@ -12,8 +12,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "dotenv": "^17.3.1",
-    "twilio": "^5.8.0"
+    "dotenv": "^17.3.1"
   },
   "license": "MIT"
 }
