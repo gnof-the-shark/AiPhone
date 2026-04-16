@@ -178,7 +178,8 @@ Send an SMS from your ClawPhone Canadian number.
    ```
 
    Use your AiPhone auth token in `Authorization`:
-   by default, use `CLAWPHONE_API_KEY`; if you set `API_TOKEN` in `.env`, use `API_TOKEN` instead.
+   by default, use your `CLAWPHONE_API_KEY` value as the Bearer token.
+   If you set `API_TOKEN` in `.env`, use that value instead.
 
 5. Check the response JSON:
    - Success includes `status: "sent"` and a `message_id`.
