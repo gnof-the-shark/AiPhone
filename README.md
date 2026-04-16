@@ -233,6 +233,7 @@ Variables already in the environment take precedence over `.env`.
 |---|---|---|
 | `PORT` | `3000` | HTTP listen port |
 | `CLAWPHONE_API_KEY` | — | **Required.** Your ClawPhone API key (`clawphone_sk_…`) — used both to authenticate agents and to call the ClawPhone API |
+| `CLAW_API_KEY` | — | Backward-compatible alias for `CLAWPHONE_API_KEY` |
 | `API_TOKEN` | _(same as `CLAWPHONE_API_KEY`)_ | Override the bearer token agents must send, if you want it to differ from your ClawPhone key |
 | `CLAWPHONE_API_URL` | `https://api.clawphone.me/v1` | Override for self-hosted ClawPhone gateways |
 | `SMS_BODY_MAX_CHARS` | `1600` | Maximum SMS body length (10 GSM-7 segments) |
