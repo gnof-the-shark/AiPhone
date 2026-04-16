@@ -1,0 +1,18 @@
+{
+  "name": "aiphone",
+  "version": "1.0.0",
+  "description": "Outbound SMS send API for the ClawPhone integration",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "NODE_OPTIONS='--import=./test/setup.mjs' node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1"
+  },
+  "license": "MIT"
+}
