@@ -154,7 +154,7 @@ Send an SMS from your ClawPhone Canadian number.
    cp .env.example .env
    ```
 
-2. Open `.env` and set:
+2. Open `.env` and set your **ClawPhone API key** (used by AiPhone):
 
    ```dotenv
    CLAWPHONE_API_KEY=clawphone_sk_xxxxxxxxxxxxxxxxxxxx
@@ -178,8 +178,11 @@ Send an SMS from your ClawPhone Canadian number.
 5. Check the response JSON:
    - Success includes `status: "sent"` and a `message_id`.
 
-Safe retry (no duplicate send): add header
-`-H "Idempotency-Key: mon-id-unique-1"`.
+6. For safe retries (no duplicate SMS), include an idempotency header:
+
+   ```bash
+   -H "Idempotency-Key: mon-id-unique-1"
+   ```
 
 ### curl
 
