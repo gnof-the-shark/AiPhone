@@ -160,6 +160,8 @@ Send an SMS from your ClawPhone Canadian number.
    CLAWPHONE_API_KEY=clawphone_sk_xxxxxxxxxxxxxxxxxxxx
    ```
 
+   Need a key? Create a free account at [clawphone.me](https://clawphone.me) and retrieve your API key.
+
 3. Start AiPhone:
 
    ```bash
@@ -175,8 +177,8 @@ Send an SMS from your ClawPhone Canadian number.
      -d '{"to":"+15141234567","body":"allo"}'
    ```
 
-   Use your AiPhone auth token in `Authorization`: by default this is the same value as
-   `CLAWPHONE_API_KEY` (or `API_TOKEN` if you configured an override).
+   Use your AiPhone auth token in `Authorization`:
+   by default, use `CLAWPHONE_API_KEY`; if you set `API_TOKEN` in `.env`, use `API_TOKEN` instead.
 
 5. Check the response JSON:
    - Success includes `status: "sent"` and a `message_id`.
