@@ -184,7 +184,7 @@ Send an SMS from your ClawPhone Canadian number.
 6. For safe retries (no duplicate SMS), include an idempotency header:
 
    ```bash
-   -H "Idempotency-Key: mon-id-unique-1"
+   -H "Idempotency-Key: my-unique-id-1"
    ```
 
 ### curl
