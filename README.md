@@ -154,7 +154,7 @@ Send an SMS from your ClawPhone Canadian number.
    cp .env.example .env
    ```
 
-2. Open `.env` and set your **ClawPhone API key** (used by AiPhone):
+2. Open `.env` and set your **ClawPhone API key** (ClawPhone is the SMS provider used by AiPhone):
 
    ```dotenv
    CLAWPHONE_API_KEY=clawphone_sk_xxxxxxxxxxxxxxxxxxxx
@@ -174,6 +174,9 @@ Send an SMS from your ClawPhone Canadian number.
      -H "Content-Type: application/json" \
      -d '{"to":"+15141234567","body":"allo"}'
    ```
+
+   Use your AiPhone auth token in `Authorization`: by default this is the same value as
+   `CLAWPHONE_API_KEY` (or `API_TOKEN` if you configured an override).
 
 5. Check the response JSON:
    - Success includes `status: "sent"` and a `message_id`.
