@@ -170,7 +170,7 @@ Send an SMS from your ClawPhone Canadian number.
 
    ```bash
    curl -X POST http://localhost:3000/v1/numbers/+14165550100/sms \
-     -H "Authorization: ******" \
+     -H "Authorization: Bearer YOUR_AIPHONE_AUTH_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"to":"+15141234567","body":"allo"}'
    ```
@@ -180,6 +180,7 @@ Send an SMS from your ClawPhone Canadian number.
 
 5. Check the response JSON:
    - Success includes `status: "sent"` and a `message_id`.
+   - If you get a non-2xx response, see **Error responses** in the API reference above (`401`, `422`, `502`, `503`).
 
 6. For safe retries (no duplicate SMS), include an idempotency header:
 
