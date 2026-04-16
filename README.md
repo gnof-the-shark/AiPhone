@@ -146,6 +146,41 @@ Send an SMS from your ClawPhone Canadian number.
 
 ## Usage examples
 
+### Step-by-step — send `"allo"` quickly
+
+1. Create your local config:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Open `.env` and set:
+
+   ```dotenv
+   CLAWPHONE_API_KEY=clawphone_sk_xxxxxxxxxxxxxxxxxxxx
+   ```
+
+3. Start AiPhone:
+
+   ```bash
+   node server.mjs
+   ```
+
+4. Send the SMS (replace both phone numbers with real values):
+
+   ```bash
+   curl -X POST http://localhost:3000/v1/numbers/+14165550100/sms \
+     -H "Authorization: ******" \
+     -H "Content-Type: application/json" \
+     -d '{"to":"+15141234567","body":"allo"}'
+   ```
+
+5. Check the response JSON:
+   - Success includes `status: "sent"` and a `message_id`.
+
+Safe retry (no duplicate send): add header
+`-H "Idempotency-Key: mon-id-unique-1"`.
+
 ### curl
 
 ```bash
