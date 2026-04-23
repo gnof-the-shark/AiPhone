@@ -3,27 +3,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createServer } from '../lib/http-server.mjs';
-import { clearIdempotencyStore } from '../lib/idempotency.mjs';
+import { clearHistory } from '../lib/conversation.mjs';
 
-const CANADIAN_FROM = '+14165550100';
-const VALID_TO      = '+15551234567';
+const ALLOWED = '+14383389459';
 
-/** Minimal config — no real ClawPhone calls. */
+/** Minimal config — no real Twilio or Gemini calls. */
 const BASE_CONFIG = {
-  PORT:               0,          // OS picks a free port
-  API_TOKEN:          'test-tok',
-  CLAWPHONE_API_KEY:  'cp-test-key',
-  CLAWPHONE_API_URL:  'https://api.clawphone.me/v1',
-  SMS_BODY_MAX_CHARS: 1600,
-  IDEMPOTENCY_TTL_MS: 60_000,
+  PORT:                 0,      // OS picks a free port
+  TWILIO_ACCOUNT_SID:  '',
+  TWILIO_AUTH_TOKEN:   '',
+  TWILIO_PHONE_NUMBER: '+15550001111',
+  GEMINI_API_KEY:      '',
+  GEMINI_MODEL:        'gemini-1.5-flash',
+  ALLOWED_NUMBERS:     [ALLOWED],
+  PROACTIVE_INTERVAL_MS: 86_400_000, // 24 h — won't fire during tests
 };
 
 /**
- * Starts a test server whose outbound HTTP calls are intercepted by `_request`.
- * Returns `{ server, url, close }`.
+ * Start a test server with optional dep overrides.
+ * Returns { url, close }.
  */
-async function startServer(config = BASE_CONFIG, _request = undefined) {
-  const server = await createServer(config, { _request });
+async function startServer(cfg = BASE_CONFIG, deps = {}) {
+  const server = await createServer(cfg, deps);
   const { port } = /** @type {any} */ (server.address());
   return {
     server,
@@ -32,200 +33,170 @@ async function startServer(config = BASE_CONFIG, _request = undefined) {
   };
 }
 
-/**
- * Convenience wrapper around fetch that sets common headers.
- */
-async function post(url, body, headers = {}) {
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-  });
+/** Build a Twilio-style form body */
+function twilioForm(from, body) {
+  return new URLSearchParams({ From: from, To: '+15550001111', Body: body }).toString();
 }
 
-test.beforeEach(() => clearIdempotencyStore());
+test.beforeEach(() => clearHistory());
 
-// ── /health ──────────────────────────────────────────────────────────────────
+// ── GET /health ───────────────────────────────────────────────────────────────
 
-test('GET /health returns 200 with clawphoneConfigured=true', async () => {
+test('GET /health returns 200', async () => {
   const { url, close } = await startServer();
   try {
     const res = await fetch(`${url}/health`);
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.ok, true);
-    assert.equal(body.clawphoneConfigured, true);
+    assert.equal(body.twilioConfigured, false);
+    assert.equal(body.geminiConfigured, false);
+    assert.equal(body.schedulerActive, false);
   } finally { await close(); }
 });
 
-test('GET /health returns clawphoneConfigured=false when key missing', async () => {
-  const { url, close } = await startServer({ ...BASE_CONFIG, CLAWPHONE_API_KEY: '' });
+test('GET /health reports twilioConfigured=true when credentials set', async () => {
+  const cfg = { ...BASE_CONFIG, TWILIO_ACCOUNT_SID: 'AC1', TWILIO_AUTH_TOKEN: 'tok', TWILIO_PHONE_NUMBER: '+15550001111' };
+  const { url, close } = await startServer(cfg);
   try {
-    const res = await fetch(`${url}/health`);
-    const body = await res.json();
-    assert.equal(body.clawphoneConfigured, false);
+    const body = await fetch(`${url}/health`).then(r => r.json());
+    assert.equal(body.twilioConfigured, true);
   } finally { await close(); }
 });
 
-// ── Authentication ───────────────────────────────────────────────────────────
-
-test('POST /v1/numbers/:n/sms returns 401 when Authorization header is missing', async () => {
-  const { url, close } = await startServer();
+test('GET /health reports schedulerActive=true when all credentials set', async () => {
+  const cfg = {
+    ...BASE_CONFIG,
+    TWILIO_ACCOUNT_SID:  'AC1',
+    TWILIO_AUTH_TOKEN:   'tok',
+    TWILIO_PHONE_NUMBER: '+15550001111',
+    GEMINI_API_KEY:      'gk1',
+  };
+  const mockProactive = async () => null; // always PASS
+  const { url, close } = await startServer(cfg, { generateProactive: mockProactive, sendSms: async () => {} });
   try {
-    const res = await fetch(`${url}/v1/numbers/${CANADIAN_FROM}/sms`, {
+    const body = await fetch(`${url}/health`).then(r => r.json());
+    assert.equal(body.schedulerActive, true);
+  } finally { await close(); }
+});
+
+// ── POST /sms/incoming ────────────────────────────────────────────────────────
+
+test('POST /sms/incoming replies with TwiML when Gemini responds', async () => {
+  const mockChat = async () => 'Bonjour!';
+  const cfg = { ...BASE_CONFIG, GEMINI_API_KEY: 'gk1' };
+  const { url, close } = await startServer(cfg, { chat: mockChat });
+  try {
+    const res = await fetch(`${url}/sms/incoming`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ to: VALID_TO, body: 'hi' }),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: twilioForm(ALLOWED, 'Salut'),
     });
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.match(text, /Bonjour!/);
+    assert.match(text, /<Response>/);
   } finally { await close(); }
 });
 
-test('POST /v1/numbers/:n/sms returns 401 for wrong token', async () => {
+test('POST /sms/incoming escapes XML in Gemini reply', async () => {
+  const mockChat = async () => 'Hi <there> & "you"';
+  const cfg = { ...BASE_CONFIG, GEMINI_API_KEY: 'gk1' };
+  const { url, close } = await startServer(cfg, { chat: mockChat });
+  try {
+    const res = await fetch(`${url}/sms/incoming`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: twilioForm(ALLOWED, 'hello'),
+    });
+    const text = await res.text();
+    assert.match(text, /&lt;there&gt;/);
+    assert.match(text, /&amp;/);
+    assert.match(text, /&quot;/);
+  } finally { await close(); }
+});
+
+test('POST /sms/incoming rejects unauthorized number', async () => {
+  const { url, close } = await startServer({ ...BASE_CONFIG, GEMINI_API_KEY: 'gk1' });
+  try {
+    const res = await fetch(`${url}/sms/incoming`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: twilioForm('+19999999999', 'hi'),
+    });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.match(text, /autorisé/);
+  } finally { await close(); }
+});
+
+test('POST /sms/incoming returns error TwiML when GEMINI_API_KEY not set', async () => {
   const { url, close } = await startServer();
   try {
-    const res = await post(
-      `${url}/v1/numbers/${CANADIAN_FROM}/sms`,
-      { to: VALID_TO, body: 'hi' },
-      { authorization: 'Bearer wrong-token' },
-    );
-    assert.equal(res.status, 401);
+    const res = await fetch(`${url}/sms/incoming`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: twilioForm(ALLOWED, 'hi'),
+    });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.match(text, /configuré/);
   } finally { await close(); }
 });
 
-// ── 503 when ClawPhone key not configured ────────────────────────────────────
-
-test('POST /v1/numbers/:n/sms returns 503 when CLAWPHONE_API_KEY not set', async () => {
-  const { url, close } = await startServer({ ...BASE_CONFIG, CLAWPHONE_API_KEY: '', API_TOKEN: '' });
+test('POST /sms/incoming returns 400 for missing fields', async () => {
+  const { url, close } = await startServer();
   try {
-    const res = await post(
-      `${url}/v1/numbers/${CANADIAN_FROM}/sms`,
-      { to: VALID_TO, body: 'hi' },
-      { authorization: 'Bearer any-token' },
-    );
-    assert.equal(res.status, 503);
+    const res = await fetch(`${url}/sms/incoming`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'From=%2B14383389459', // no Body
+    });
+    assert.equal(res.status, 400);
   } finally { await close(); }
 });
 
-// ── Input validation ─────────────────────────────────────────────────────────
-
-test('POST /v1/numbers/:n/sms returns 422 for non-Canadian from number', async () => {
-  const mockRequest = async () => ({ statusCode: 201, body: {} });
-  const { url, close } = await startServer(BASE_CONFIG, mockRequest);
+test('POST /sms/incoming returns error TwiML when Gemini throws', async () => {
+  const mockChat = async () => { throw new Error('gemini down'); };
+  const cfg = { ...BASE_CONFIG, GEMINI_API_KEY: 'gk1' };
+  const { url, close } = await startServer(cfg, { chat: mockChat });
   try {
-    const res = await post(
-      `${url}/v1/numbers/+33612345678/sms`,
-      { to: VALID_TO, body: 'hi' },
-      { authorization: 'Bearer test-tok' },
-    );
-    assert.equal(res.status, 422);
-    const body = await res.json();
-    assert.match(body.error, /Canadian/);
+    const res = await fetch(`${url}/sms/incoming`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: twilioForm(ALLOWED, 'hi'),
+    });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.match(text, /erreur/);
   } finally { await close(); }
 });
 
-test('POST /v1/numbers/:n/sms returns 422 for invalid to number', async () => {
-  const mockRequest = async () => ({ statusCode: 201, body: {} });
-  const { url, close } = await startServer(BASE_CONFIG, mockRequest);
+// ── Conversation history ──────────────────────────────────────────────────────
+
+test('Conversation history accumulates across requests', async () => {
+  const received = [];
+  const mockChat = async ({ history, userMessage }) => {
+    received.push({ historyLength: history.length, userMessage });
+    return 'ok';
+  };
+  const cfg = { ...BASE_CONFIG, GEMINI_API_KEY: 'gk1' };
+  const { url, close } = await startServer(cfg, { chat: mockChat });
   try {
-    const res = await post(
-      `${url}/v1/numbers/${encodeURIComponent(CANADIAN_FROM)}/sms`,
-      { to: 'bad-number', body: 'hi' },
-      { authorization: 'Bearer test-tok' },
-    );
-    assert.equal(res.status, 422);
-    const body = await res.json();
-    assert.match(body.error, /E\.164/);
-  } finally { await close(); }
-});
-
-test('POST /v1/numbers/:n/sms returns 422 for empty body', async () => {
-  const mockRequest = async () => ({ statusCode: 201, body: {} });
-  const { url, close } = await startServer(BASE_CONFIG, mockRequest);
-  try {
-    const res = await post(
-      `${url}/v1/numbers/${encodeURIComponent(CANADIAN_FROM)}/sms`,
-      { to: VALID_TO, body: '   ' },
-      { authorization: 'Bearer test-tok' },
-    );
-    assert.equal(res.status, 422);
-  } finally { await close(); }
-});
-
-// ── Happy path ───────────────────────────────────────────────────────────────
-
-test('POST /v1/numbers/:n/sms returns 201 on successful send', async () => {
-  const mockRequest = async ({ url, body }) => {
-    assert.match(url, /clawphone\.me/);
-    assert.match(url, /14165550100/);
-    return {
-      statusCode: 201,
-      body: { message_id: 'cp_123', status: 'sent', to: body.to, from: CANADIAN_FROM, body: body.body, created_at: new Date().toISOString() },
+    const opts = {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
     };
-  };
-  const { url, close } = await startServer(BASE_CONFIG, mockRequest);
-  try {
-    const res = await post(
-      `${url}/v1/numbers/${encodeURIComponent(CANADIAN_FROM)}/sms`,
-      { to: VALID_TO, body: 'Bonjour!' },
-      { authorization: 'Bearer test-tok' },
-    );
-    assert.equal(res.status, 201);
-    const result = await res.json();
-    assert.equal(result.from,   CANADIAN_FROM);
-    assert.equal(result.to,     VALID_TO);
-    assert.equal(result.body,   'Bonjour!');
-    assert.equal(result.status, 'sent');
-    assert.ok(result.message_id);
-    assert.ok(result.created_at);
+    await fetch(`${url}/sms/incoming`, { ...opts, body: twilioForm(ALLOWED, 'first') });
+    await fetch(`${url}/sms/incoming`, { ...opts, body: twilioForm(ALLOWED, 'second') });
+
+    assert.equal(received[0].historyLength, 0);   // no history on first message
+    assert.equal(received[1].historyLength, 2);   // user + model from first exchange
+    assert.equal(received[1].userMessage, 'second');
   } finally { await close(); }
 });
 
-// ── Idempotency ──────────────────────────────────────────────────────────────
-
-test('Idempotency-Key deduplicates identical requests', async () => {
-  let calls = 0;
-  const mockRequest = async () => {
-    calls++;
-    return { statusCode: 201, body: { message_id: 'cp_idem', status: 'sent' } };
-  };
-  const { url, close } = await startServer(BASE_CONFIG, mockRequest);
-  try {
-    const headers = { authorization: 'Bearer test-tok', 'idempotency-key': 'idem-key-1' };
-    const payload = { to: VALID_TO, body: 'once' };
-
-    const r1 = await post(`${url}/v1/numbers/${encodeURIComponent(CANADIAN_FROM)}/sms`, payload, headers);
-    const r2 = await post(`${url}/v1/numbers/${encodeURIComponent(CANADIAN_FROM)}/sms`, payload, headers);
-
-    assert.equal(r1.status, 201);
-    assert.equal(r2.status, 201);
-    assert.equal(calls, 1); // ClawPhone called only once
-
-    const b1 = await r1.json();
-    const b2 = await r2.json();
-    assert.equal(b1.message_id, b2.message_id);
-  } finally { await close(); }
-});
-
-// ── Provider error ───────────────────────────────────────────────────────────
-
-test('POST /v1/numbers/:n/sms returns 502 when ClawPhone returns an error', async () => {
-  const mockRequest = async () => ({
-    statusCode: 500,
-    body: { error: 'Internal server error' },
-  });
-  const { url, close } = await startServer(BASE_CONFIG, mockRequest);
-  try {
-    const res = await post(
-      `${url}/v1/numbers/${encodeURIComponent(CANADIAN_FROM)}/sms`,
-      { to: VALID_TO, body: 'hello' },
-      { authorization: 'Bearer test-tok' },
-    );
-    assert.equal(res.status, 502);
-  } finally { await close(); }
-});
-
-// ── 404 ──────────────────────────────────────────────────────────────────────
+// ── 404 ───────────────────────────────────────────────────────────────────────
 
 test('Unknown route returns 404', async () => {
   const { url, close } = await startServer();

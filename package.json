@@ -1,9 +1,9 @@
 {
   "name": "aiphone",
-  "version": "1.0.0",
-  "description": "Outbound SMS send API for the ClawPhone integration",
+  "version": "2.0.0",
+  "description": "Conversational SMS gateway: Twilio + Gemini, with proactive messaging",
   "type": "module",
-  "main": "index.mjs",
+  "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
     "test": "NODE_OPTIONS='--import=./test/setup.mjs' node --test"
