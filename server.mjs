@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Standalone entry point — `node server.mjs` or PM2.
+ * Standalone entry point — `node server.mjs`.
  */
 import * as config from './lib/config.mjs';
 import { createServer } from './lib/http-server.mjs';
